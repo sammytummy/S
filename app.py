@@ -67,7 +67,7 @@ def fetch_prices(holdings, usd_to_cad):
     return pd.DataFrame.from_dict(data, orient="index")
 
 df = fetch_prices(holdings, usd_to_cad)
-df["Percentage"] = df["Value (CAD)"] / df["Value (CAD)"].sum()
+df["Percentage of Portfolio"] = df["Value (CAD)"] / df["Value (CAD)"].sum()
 
 # 📌 Portfolio Total Values
 total_value_cad = df["Value (CAD)"].sum()
@@ -96,7 +96,7 @@ st.dataframe(
         "Value (USD)": "{:,.2f}",
         "% Change from Cost Basis": "{:+.2f}%",
         "% Change from Last Trading Day": "{:+.2f}%",
-        "Percentage": "{:.2%}"
+        "Percentage of Portfolio": "{:.2%}"
     }).applymap(highlight_percentage, subset=["% Change from Cost Basis", "% Change from Last Trading Day"])
 )
 
@@ -106,13 +106,87 @@ st.write(f"💰 Total Value: {total_value_cad:,.2f} CAD | {total_value_usd:,.2f}
 
 # 🔹 Second Portfolio Placeholder
 st.subheader("📋 Second Portfolio Overview")
-st.write("(Add data for a second portfolio here)")
+# 📌 Define Stock Holdings & Currency
+holdings2 = {
+    "ETHX-B.TO": {"quantity": 21, "cost_basis": 14.14, "currency": "CAD"},
+    "BITF.TO": {"quantity": 2079, "cost_basis": 2.47, "currency": "CAD"},
+    "FBTC.TO": {"quantity": 11, "cost_basis": 21.87, "currency": "CAD"},
+    "SHOP.TO": {"quantity": 29, "cost_basis": 96.84, "currency": "CAD"},
+}
+
+
+# 📌 Fetch Real-Time Prices & Convert to CAD & USD
+def fetch_prices(holdings2, usd_to_cad):
+    data = {}
+    for symbol, info in holdings2.items():
+        stock = yf.Ticker(symbol)
+        hist = stock.history(period="2d")  # Fetch last two days for % change calc
+        
+        # Check if data is empty
+        if hist.empty:
+            print(f"⚠ Warning: No data for {symbol}. Skipping...")
+            continue  # Skip this stock
+
+        price = hist["Close"].iloc[-1]  # Get last available price
+        prev_price = hist["Close"].iloc[-2] if len(hist) > 1 else price
+
+        value_original = info["quantity"] * price
+        value_cad = value_original * usd_to_cad if info["currency"] == "USD" else value_original
+        value_usd = value_original / usd_to_cad if info["currency"] == "CAD" else value_original
+        
+        book_value = info["quantity"] * info["cost_basis"]
+        percent_change_cost_basis = ((price - info["cost_basis"]) / info["cost_basis"]) * 100
+        percent_change_last_day = ((price - prev_price) / prev_price) * 100
+
+        data[symbol] = {
+            "Last Price": price,
+            "Cost Basis": info["cost_basis"],
+            "Quantity": info["quantity"],
+            "Book Value": book_value,
+            ##"Value (Original)": value_original,
+            "Value (CAD)": value_cad,
+            "Value (USD)": value_usd,
+            "% Change from Cost Basis": percent_change_cost_basis,
+            "% Change from Last Trading Day": percent_change_last_day
+        }
+    
+    return pd.DataFrame.from_dict(data, orient="index")
+
+df = fetch_prices(holdings2, usd_to_cad)
+df["Percentage of Portfolio"] = df["Value (CAD)"] / df["Value (CAD)"].sum()
+
+# 📌 Portfolio Total Values
+total_value_cad = df["Value (CAD)"].sum()
+total_value_usd = df["Value (USD)"].sum()
+
+
+def highlight_percentage(val):
+    color = "green" if val > 0 else "red"
+    return f'color: {color}'
+
+st.dataframe(
+    df.style.format({
+        "Last Price": "{:,.2f}",
+        "Cost Basis": "{:,.2f}",
+        ##"Value (Original)": "{:,.2f}",
+        "Book Value": "{:,.2f}",
+        "Value (CAD)": "{:,.2f}",
+        "Value (USD)": "{:,.2f}",
+        "% Change from Cost Basis": "{:+.2f}%",
+        "% Change from Last Trading Day": "{:+.2f}%",
+        "Percentage of Portfolio": "{:.2%}"
+    }).applymap(highlight_percentage, subset=["% Change from Cost Basis", "% Change from Last Trading Day"])
+)
+
+# 🔹 Portfolio Total Values
+st.subheader("📊 FHSA Portfolio Total Value")
+st.write(f"💰 Total Value: {total_value_cad:,.2f} CAD | {total_value_usd:,.2f} USD")
 
 # Expand table size
 st.markdown(
     """
     <style>
-    .dataframe-container { max-height: 600px !important; }
+    .dataframe-container { max-height: 800px !important; width: 100% !important; }
     </style>
     """,
     unsafe_allow_html=True
