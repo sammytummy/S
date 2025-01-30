@@ -120,7 +120,6 @@ pyparsing==3.2.1
 pyreadline3==3.5.4
 python-dateutil==2.8.2
 pytz==2024.2
-pywidevine==1.8.0
 pywin32==306
 PyYAML==6.0.1
 pyzmq==25.1.0
