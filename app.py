@@ -7,19 +7,19 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 
 # 📌 Define Stock Holdings & Currency
 holdings = {
-    "PLTR": {"quantity": 561, "currency": "USD"},
-    "SOFI": {"quantity": 300, "currency": "USD"},
-    "GME": {"quantity": 30, "currency": "USD"},
-    "CLSK": {"quantity": 70, "currency": "USD"},
-    "BTBT": {"quantity": 300, "currency": "USD"},
-    "CIFR": {"quantity": 350, "currency": "USD"},
-    "NU260116C00025000": {"quantity": 10, "currency": "USD"},
-    "ETHX-B.TO": {"quantity": 8, "currency": "CAD"},
-    "BITF.TO": {"quantity": 521, "currency": "CAD"},
-    "BTCC-B.TO": {"quantity": 220, "currency": "CAD"},
-    "HUT.TO": {"quantity": 40, "currency": "CAD"},
-    "SHOP.TO": {"quantity": 4, "currency": "CAD"},
-    "TSLA.NE": {"quantity": 258, "currency": "CAD"}
+    "PLTR": {"quantity": 561, "cost_basis": 20.6602, "currency": "USD"},
+    "SOFI": {"quantity": 300, "cost_basis": 8.22, "currency": "USD"},
+    "GME": {"quantity": 30, "cost_basis": 28.39, "currency": "USD"},
+    "CLSK": {"quantity": 70, "cost_basis": 16.56, "currency": "USD"},
+    "BTBT": {"quantity": 300, "cost_basis": 4.07, "currency": "USD"},
+    "CIFR": {"quantity": 350, "cost_basis": 4.04, "currency": "USD"},
+    "NU260116C00025000": {"quantity": 10, "cost_basis": 0.29, "currency": "USD"},
+    "ETHX-B.TO": {"quantity": 8, "cost_basis": 19.97, "currency": "CAD"},
+    "BITF.TO": {"quantity": 521, "cost_basis": 3.39, "currency": "CAD"},
+    "BTCC-B.TO": {"quantity": 220.5312, "cost_basis": 7.96, "currency": "CAD"},
+    "HUT.TO": {"quantity": 40, "cost_basis": 13.52, "currency": "CAD"},
+    "SHOP.TO": {"quantity": 4, "cost_basis": 96.58, "currency": "CAD"},
+    "TSLA.NE": {"quantity": 258, "cost_basis": 22.01, "currency": "CAD"}
 }
 
 # 📌 Fetch USD/CAD Exchange Rate
@@ -34,7 +34,7 @@ def fetch_prices(holdings, usd_to_cad):
     data = {}
     for symbol, info in holdings.items():
         stock = yf.Ticker(symbol)
-        hist = stock.history(period="1d")
+        hist = stock.history(period="2d")  # Fetch last two days for % change calc
         
         # Check if data is empty
         if hist.empty:
@@ -42,24 +42,36 @@ def fetch_prices(holdings, usd_to_cad):
             continue  # Skip this stock
 
         price = hist["Close"].iloc[-1]  # Get last available price
+        prev_price = hist["Close"].iloc[-2] if len(hist) > 1 else price
 
         value_original = info["quantity"] * price
         value_cad = value_original * usd_to_cad if info["currency"] == "USD" else value_original
         value_usd = value_original / usd_to_cad if info["currency"] == "CAD" else value_original
+        
+        book_value = info["quantity"] * info["cost_basis"]
+        percent_change_cost_basis = ((price - info["cost_basis"]) / info["cost_basis"]) * 100
+        percent_change_last_day = ((price - prev_price) / prev_price) * 100
 
         data[symbol] = {
-            "Currency": info["currency"],
+            "Last Price": price,
+            "Cost Basis": info["cost_basis"],
             "Quantity": info["quantity"],
-            "Value (Original)": value_original,
+            "Book Value": book_value,
+            ##"Value (Original)": value_original,
             "Value (CAD)": value_cad,
             "Value (USD)": value_usd,
+            "% Change from Cost Basis": percent_change_cost_basis,
+            "% Change from Last Trading Day": percent_change_last_day
         }
     
     return pd.DataFrame.from_dict(data, orient="index")
 
-
 df = fetch_prices(holdings, usd_to_cad)
 df["Percentage"] = df["Value (CAD)"] / df["Value (CAD)"].sum()
+
+# 📌 Portfolio Total Values
+total_value_cad = df["Value (CAD)"].sum()
+total_value_usd = df["Value (USD)"].sum()
 
 # 📌 Streamlit App
 st.title("📈 Stock Portfolio Dashboard")
@@ -70,12 +82,42 @@ st.write(f"1 USD = {usd_to_cad:.2f} CAD")
 
 # 🔹 Portfolio Table
 st.subheader("📋 Portfolio Overview")
-st.dataframe(df.style.format({
-    "Value (Original)": "{:,.2f}",
-    "Value (CAD)": "{:,.2f}",
-    "Value (USD)": "{:,.2f}",
-    "Percentage": "{:.2%}"
-}))
+def highlight_percentage(val):
+    color = "green" if val > 0 else "red"
+    return f'color: {color}'
+
+st.dataframe(
+    df.style.format({
+        "Last Price": "{:,.2f}",
+        "Cost Basis": "{:,.2f}",
+        ##"Value (Original)": "{:,.2f}",
+        "Book Value": "{:,.2f}",
+        "Value (CAD)": "{:,.2f}",
+        "Value (USD)": "{:,.2f}",
+        "% Change from Cost Basis": "{:+.2f}%",
+        "% Change from Last Trading Day": "{:+.2f}%",
+        "Percentage": "{:.2%}"
+    }).applymap(highlight_percentage, subset=["% Change from Cost Basis", "% Change from Last Trading Day"])
+)
+
+# 🔹 Portfolio Total Values
+st.subheader("📊 Portfolio Total Value")
+st.write(f"💰 Total Value: {total_value_cad:,.2f} CAD | {total_value_usd:,.2f} USD")
+
+# 🔹 Second Portfolio Placeholder
+st.subheader("📋 Second Portfolio Overview")
+st.write("(Add data for a second portfolio here)")
+
+# Expand table size
+st.markdown(
+    """
+    <style>
+    .dataframe-container { max-height: 600px !important; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # # 🔹 Function to Fetch Historical Portfolio Value (Only CAD)
 # def fetch_historical_portfolio(holdings):
@@ -100,7 +142,7 @@ st.dataframe(df.style.format({
 #         hist["Value"] = hist["Close"] * info["quantity"]
 
 #         # Convert USD stocks to CAD
-#         if info["currency"] == "USD":
+#         if info["cost_basis": ,"currency"] == "USD":
 #             hist["Value (CAD)"] = hist["Value"] * forex["Exchange Rate"]
 #         else:
 #             hist["Value (CAD)"] = hist["Value"]
@@ -148,7 +190,7 @@ st.dataframe(df.style.format({
 
 # # Add Stock Labels
 # for i, symbol in enumerate(df.index):
-#     currency = "🇺🇸" if holdings[symbol]["currency"] == "USD" else "🇨🇦"
+#     currency = "🇺🇸" if holdings[symbol]["cost_basis": ,"currency"] == "USD" else "🇨🇦"
 #     ax.text(points[i, 0], points[i, 1], f"{symbol} {currency}", fontsize=12, weight="bold", ha="center", color="white")
 
 # ax.set_title("Portfolio Allocation (Size = % Holding in CAD)")
