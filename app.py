@@ -22,6 +22,13 @@ holdings = {
     "TSLA.NE": {"quantity": 258, "cost_basis": 22.01, "currency": "CAD"}
 }
 
+holdings2 = {
+    "ETHX-B.TO": {"quantity": 21, "cost_basis": 14.14, "currency": "CAD"},
+    "BITF.TO": {"quantity": 2079, "cost_basis": 2.47, "currency": "CAD"},
+    "FBTC.TO": {"quantity": 11, "cost_basis": 21.87, "currency": "CAD"},
+    "SHOP.TO": {"quantity": 29, "cost_basis": 96.84, "currency": "CAD"},
+}
+
 # 📌 Fetch USD/CAD Exchange Rate
 def get_exchange_rate():
     forex = yf.Ticker("CAD=X")  # USD to CAD exchange rate
@@ -57,7 +64,6 @@ def fetch_prices(holdings, usd_to_cad):
             "Cost Basis": info["cost_basis"],
             "Quantity": info["quantity"],
             "Book Value": book_value,
-            ##"Value (Original)": value_original,
             "Value (CAD)": value_cad,
             "Value (USD)": value_usd,
             "% Change from Cost Basis": percent_change_cost_basis,
@@ -67,11 +73,48 @@ def fetch_prices(holdings, usd_to_cad):
     return pd.DataFrame.from_dict(data, orient="index")
 
 df = fetch_prices(holdings, usd_to_cad)
+df2 = fetch_prices(holdings2, usd_to_cad)
+
 df["Percentage of Portfolio"] = df["Value (CAD)"] / df["Value (CAD)"].sum()
+df2["Percentage of Portfolio"] = df2["Value (CAD)"] / df2["Value (CAD)"].sum()
 
 # 📌 Portfolio Total Values
 total_value_cad = df["Value (CAD)"].sum()
 total_value_usd = df["Value (USD)"].sum()
+total_book_value = df["Book Value"].sum()
+total_gain_loss = total_value_cad - total_book_value
+percentage_gain_loss = (total_gain_loss / total_book_value) * 100
+
+# 📌 Fetch Historical Portfolio Value
+def fetch_historical_values(holdings, usd_to_cad, period="6mo"):
+    all_prices = []
+    book_values = []
+    for symbol, info in holdings.items():
+        stock = yf.Ticker(symbol)
+        hist = stock.history(period=period)["Close"]
+        
+        if hist.empty:
+            print(f"⚠ Warning: No data for {symbol}. Skipping...")
+            continue
+        
+        value_original = hist * info["quantity"]
+        value_cad = value_original * usd_to_cad if info["currency"] == "USD" else value_original
+        
+        all_prices.append(value_cad)
+        book_values.append(pd.Series([info["quantity"] * info["cost_basis"]] * len(hist), index=hist.index))
+    
+    portfolio_values = pd.concat(all_prices, axis=1).sum(axis=1)
+    book_value_series = pd.concat(book_values, axis=1).sum(axis=1)
+    
+    # Remove extreme fluctuations (±50%)
+    percent_changes = portfolio_values.pct_change()
+    filtered_values = portfolio_values[~((percent_changes.abs() > 0.5))]
+    filtered_book_values = book_value_series.loc[filtered_values.index]
+    
+    return filtered_values, filtered_book_values
+
+historical_portfolio_values, historical_book_values = fetch_historical_values(holdings, usd_to_cad)
+
 
 # 📌 Streamlit App
 st.title("📈 Stock Portfolio Dashboard")
@@ -90,7 +133,6 @@ st.dataframe(
     df.style.format({
         "Last Price": "{:,.2f}",
         "Cost Basis": "{:,.2f}",
-        ##"Value (Original)": "{:,.2f}",
         "Book Value": "{:,.2f}",
         "Value (CAD)": "{:,.2f}",
         "Value (USD)": "{:,.2f}",
@@ -103,72 +145,54 @@ st.dataframe(
 # 🔹 Portfolio Total Values
 st.subheader("📊 Portfolio Total Value")
 st.write(f"💰 Total Value: {total_value_cad:,.2f} CAD | {total_value_usd:,.2f} USD")
+st.write(f"📈 Gain/Loss from Book Value: {total_gain_loss:,.2f} CAD ({percentage_gain_loss:+.2f}%)")
+
+# 🔹 Historical Portfolio Value Graph
+st.subheader("📉 Historical Portfolio Value")
+fig, ax = plt.subplots()
+ax.plot(historical_portfolio_values.index, historical_portfolio_values, label="Portfolio Value (CAD)", color="blue")
+ax.plot(historical_book_values.index, historical_book_values, label="Book Value", color="black", linestyle="dotted")
+ax.set_xlabel("Date")
+ax.set_ylabel("Value (CAD)")
+ax.legend()
+st.pyplot(fig)
+
+# Expand table size
+st.markdown(
+    """
+    <style>
+    .dataframe-container { max-height: 800px !important; width: 100% !important; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # 🔹 Second Portfolio Placeholder
 st.subheader("📋 Second Portfolio Overview")
-# 📌 Define Stock Holdings & Currency
-holdings2 = {
-    "ETHX-B.TO": {"quantity": 21, "cost_basis": 14.14, "currency": "CAD"},
-    "BITF.TO": {"quantity": 2079, "cost_basis": 2.47, "currency": "CAD"},
-    "FBTC.TO": {"quantity": 11, "cost_basis": 21.87, "currency": "CAD"},
-    "SHOP.TO": {"quantity": 29, "cost_basis": 96.84, "currency": "CAD"},
-}
-
-
-# 📌 Fetch Real-Time Prices & Convert to CAD & USD
-def fetch_prices(holdings2, usd_to_cad):
-    data = {}
-    for symbol, info in holdings2.items():
-        stock = yf.Ticker(symbol)
-        hist = stock.history(period="2d")  # Fetch last two days for % change calc
-        
-        # Check if data is empty
-        if hist.empty:
-            print(f"⚠ Warning: No data for {symbol}. Skipping...")
-            continue  # Skip this stock
-
-        price = hist["Close"].iloc[-1]  # Get last available price
-        prev_price = hist["Close"].iloc[-2] if len(hist) > 1 else price
-
-        value_original = info["quantity"] * price
-        value_cad = value_original * usd_to_cad if info["currency"] == "USD" else value_original
-        value_usd = value_original / usd_to_cad if info["currency"] == "CAD" else value_original
-        
-        book_value = info["quantity"] * info["cost_basis"]
-        percent_change_cost_basis = ((price - info["cost_basis"]) / info["cost_basis"]) * 100
-        percent_change_last_day = ((price - prev_price) / prev_price) * 100
-
-        data[symbol] = {
-            "Last Price": price,
-            "Cost Basis": info["cost_basis"],
-            "Quantity": info["quantity"],
-            "Book Value": book_value,
-            ##"Value (Original)": value_original,
-            "Value (CAD)": value_cad,
-            "Value (USD)": value_usd,
-            "% Change from Cost Basis": percent_change_cost_basis,
-            "% Change from Last Trading Day": percent_change_last_day
-        }
-    
-    return pd.DataFrame.from_dict(data, orient="index")
-
-df = fetch_prices(holdings2, usd_to_cad)
-df["Percentage of Portfolio"] = df["Value (CAD)"] / df["Value (CAD)"].sum()
 
 # 📌 Portfolio Total Values
-total_value_cad = df["Value (CAD)"].sum()
-total_value_usd = df["Value (USD)"].sum()
+total_value_cad = df2["Value (CAD)"].sum()
+total_value_usd = df2["Value (USD)"].sum()
+total_book_value = df2["Book Value"].sum()
+total_gain_loss = total_value_cad - total_book_value
+percentage_gain_loss = (total_gain_loss / total_book_value) * 100
+
+# 📌 Portfolio Historical Value Placeholder (dummy data for now)
+historical_dates = pd.date_range(start="2024-01-01", periods=len(df2), freq="D")
+historical_values = np.cumsum(np.random.randn(len(historical_dates)) * 1000 + total_value_cad)
 
 
+# 🔹 Portfolio Table
+st.subheader("📋 Portfolio Overview")
 def highlight_percentage(val):
     color = "green" if val > 0 else "red"
     return f'color: {color}'
 
 st.dataframe(
-    df.style.format({
+    df2.style.format({
         "Last Price": "{:,.2f}",
         "Cost Basis": "{:,.2f}",
-        ##"Value (Original)": "{:,.2f}",
         "Book Value": "{:,.2f}",
         "Value (CAD)": "{:,.2f}",
         "Value (USD)": "{:,.2f}",
@@ -181,6 +205,19 @@ st.dataframe(
 # 🔹 Portfolio Total Values
 st.subheader("📊 FHSA Portfolio Total Value")
 st.write(f"💰 Total Value: {total_value_cad:,.2f} CAD | {total_value_usd:,.2f} USD")
+st.write(f"📈 Gain/Loss from Book Value: {total_gain_loss:,.2f} CAD ({percentage_gain_loss:+.2f}%)")
+
+historical_portfolio_values, historical_book_values = fetch_historical_values(holdings2, usd_to_cad)
+
+# 🔹 Historical Portfolio Value Graph
+st.subheader("📉 Historical Portfolio Value")
+fig, ax = plt.subplots()
+ax.plot(historical_portfolio_values.index, historical_portfolio_values, label="Portfolio Value (CAD)", color="blue")
+ax.plot(historical_book_values.index, historical_book_values, label="Book Value", color="black", linestyle="dotted")
+ax.set_xlabel("Date")
+ax.set_ylabel("Value (CAD)")
+ax.legend()
+st.pyplot(fig)
 
 # Expand table size
 st.markdown(
@@ -191,7 +228,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 
 # # 🔹 Function to Fetch Historical Portfolio Value (Only CAD)
 # def fetch_historical_portfolio(holdings):
