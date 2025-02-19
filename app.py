@@ -8,7 +8,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 # 📌 Define Stock Holdings & Currency
 holdings = {
     "PLTR": {"quantity": 561, "cost_basis": 20.6602, "currency": "USD"},
-    "SOFI": {"quantity": 300, "cost_basis": 8.22, "currency": "USD"},
+    "CONL": {"quantity": 135, "cost_basis": 36.95, "currency": "USD"},
     "GME": {"quantity": 30, "cost_basis": 28.39, "currency": "USD"},
     "CLSK": {"quantity": 70, "cost_basis": 16.56, "currency": "USD"},
     "BTBT": {"quantity": 300, "cost_basis": 4.07, "currency": "USD"},
